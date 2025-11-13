@@ -1,0 +1,61 @@
+name: CI - Node DB App
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          until pg_isready -h localhost -U postgres; do
+            echo "Waiting for database..."
+            sleep 2
+          done
+
+      - name: Run app test
+        env:
+          DB_HOST: localhost
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: testdb
+          DB_PORT: 5432
+          PORT: 3000
+        run: |
+          node server.js &
+          sleep 5
+          curl -f http://localhost:3000 || exit 1
+
+      - name: Build Docker image
+        run: docker build -t node-db-app:latest .
